@@ -194,4 +194,58 @@ export const LAYOUTS = {
       return { w: PAD * 2 + maxW * STEP, h: PAD + Math.max(widths.length, 1) * rowH, nodes, bits };
     },
   },
+
+  /*
+   * Superposed: every category is drawn on the SAME ring of dots.
+   *   - Category #k (1-based) hops k dots at a time: #1 links neighbours, #2 skips every other dot,
+   *     #3 skips two dots, and so on.
+   *   - Bit j of a category is the chord from dot (j*k) to dot ((j+1)*k), wrapping around the ring.
+   *   - Every category starts on the top dot (dot 0), which is drawn in its own colour.
+   *   - A category with b bits and step k travels b*k dots, so the ring needs max(b*k) dots
+   *     (e.g. 8 permutations = 3 bits at step 2 -> 6 dots). The ring never has fewer than 3.
+   */
+  superposed: {
+    label: "Superposed",
+    build(widths) {
+      const N = Math.max(3, ...widths.map((b, i) => b * (i + 1)));
+      const r = Math.max(110, N * 14);
+      const c = r + PAD;
+      const nodes = Array.from({ length: N }, (_, k) => {
+        const a = -Math.PI / 2 + (2 * Math.PI * k) / N;
+        return { x: c + r * Math.cos(a), y: c + r * Math.sin(a), start: k === 0 };
+      });
+
+      const bits = [];
+      widths.forEach((b, ci) => {
+        const step = ci + 1;
+        for (let j = 0; j < b; j++) {
+          const from = nodes[(j * step) % N];
+          const to = nodes[((j + 1) * step) % N];
+          if (from === to) {
+            // The hop lands back on the same dot: draw a small loop pointing outwards.
+            const ux = (from.x - c) / r;
+            const uy = (from.y - c) / r;
+            const lr = 14;
+            const qx = from.x + ux * lr * 2;
+            const qy = from.y + uy * lr * 2;
+            bits.push(
+              `M ${from.x} ${from.y} A ${lr} ${lr} 0 1 1 ${qx} ${qy} A ${lr} ${lr} 0 1 1 ${from.x} ${from.y}`
+            );
+          } else {
+            bits.push(seg(from, to));
+          }
+        }
+      });
+
+      return {
+        w: c * 2,
+        h: c * 2,
+        nodes,
+        bits,
+        // Earlier categories are drawn thicker and underneath, so where chords overlap
+        // every category stays visible.
+        strokeFor: (ci) => Math.max(2.5, 7.5 - ci * 1.1),
+      };
+    },
+  },
 };

@@ -29,8 +29,9 @@ export default function Glyph({ parts, layout, showGaps = true, svgRef, classNam
             d={d}
             fill="none"
             stroke={colorFor(bitMeta[i].ci)}
-            strokeWidth="5"
+            strokeWidth={geo.strokeFor ? geo.strokeFor(bitMeta[i].ci) : 5}
             strokeLinecap="round"
+            strokeOpacity={geo.strokeFor ? 0.92 : 1}
           />
         ) : (
           showGaps && (
@@ -47,9 +48,14 @@ export default function Glyph({ parts, layout, showGaps = true, svgRef, classNam
           )
         )
       )}
-      {geo.nodes.map((n, i) => (
-        <circle key={i} cx={n.x} cy={n.y} r="5" fill="#0b0d17" stroke="#fff" strokeOpacity="0.6" />
-      ))}
+      {geo.nodes.map((n, i) =>
+        n.start ? (
+          // The starting dot (top of the ring in the Superposed layout) stands out.
+          <circle key={i} cx={n.x} cy={n.y} r="8" fill="#ffd166" stroke="#0b0d17" strokeWidth="2" />
+        ) : (
+          <circle key={i} cx={n.x} cy={n.y} r="5" fill="#0b0d17" stroke="#fff" strokeOpacity="0.6" />
+        )
+      )}
     </svg>
   );
 }

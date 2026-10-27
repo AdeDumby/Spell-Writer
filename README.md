@@ -37,6 +37,15 @@ Everything is stored in one file, `spellbook.json`, in Electron's per-user data 
 - A spell is the concatenation of every category's bits, in category order.
 - A saved spell keeps its own snapshot of bits and labels, so editing the categories later never rewrites it.
 
+## Representations
+
+| Name | How a spell is drawn |
+| --- | --- |
+| **Line** | One row of dots; bit = 1 draws the segment to the next dot, bit = 0 leaves a gap. |
+| **Circle** | The same, wrapped around a ring. |
+| **Rows** | One row per category. |
+| **Superposed** | All categories share one ring of dots and every one starts on the top dot (drawn in gold). Category #1 links neighbouring dots, #2 skips every other dot, #3 hops 3 dots, and so on. Bit *j* of category *k* is the chord from dot *j·k* to dot *(j+1)·k*, wrapping around. The ring has `max(bits × step)` dots (at least 3), so a 3-bit category in 2nd position needs 6. |
+
 ## Adding a new representation
 
 Open `src/lib/spell.js` and add an entry to `LAYOUTS`. It receives the width of each category and returns
