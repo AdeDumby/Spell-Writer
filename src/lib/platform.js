@@ -40,6 +40,32 @@ export async function exportText(defaultName, content, mime = "text/plain") {
   return defaultName;
 }
 
+const blobToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+/**
+ * Ask the user where to save a binary file (PNG, JPG, PDF…).
+ * Returns the saved path, or null if they cancelled the dialog.
+ */
+export async function exportBinary(defaultName, data, mime = "application/octet-stream") {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  if (api) {
+    return api.exportFile({ defaultName, content: await blobToBase64(blob), encoding: "base64" });
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = defaultName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return defaultName;
+}
+
 /** Let the user pick a JSON file and return its text, or null if they cancel. */
 export async function importText() {
   if (api) return api.importFile();

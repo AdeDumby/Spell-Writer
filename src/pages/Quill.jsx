@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Glyph from "../components/Glyph.jsx";
 import Binary from "../components/Binary.jsx";
 import ColorControls from "../components/ColorControls.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
 import {
   LAYOUTS,
   binaryOf,
@@ -12,7 +13,6 @@ import {
   uid,
   widthOf,
 } from "../lib/spell.js";
-import { exportText, serializeSvg } from "../lib/platform.js";
 import { useStore } from "../store.jsx";
 
 export default function Quill() {
@@ -26,7 +26,6 @@ export default function Quill() {
   const colors = useMemo(() => resolveColors(parts, scheme), [parts, scheme]);
   const existing = spells.find((s) => s.id === draft.editingId);
 
-  const svgRef = useRef(null);
   const [showGaps, setShowGaps] = useState(true);
   const [decodeText, setDecodeText] = useState("");
   const [decodeError, setDecodeError] = useState("");
@@ -151,14 +150,17 @@ export default function Quill() {
               />
               show gaps
             </label>
-            <button
-              onClick={() =>
-                svgRef.current &&
-                exportText(`spell-${binary}.svg`, serializeSvg(svgRef.current), "image/svg+xml")
-              }
-            >
-              Export SVG
-            </button>
+            <ExportMenu
+              getSpell={() => ({
+                name: draft.name.trim() || `Spell ${spells.length + (existing ? 0 : 1)}`,
+                notes: draft.notes,
+                layout,
+                colors: scheme,
+                parts,
+                showGaps,
+                updatedAt: Date.now(),
+              })}
+            />
           </div>
 
           <div className="colors-row">
@@ -173,7 +175,7 @@ export default function Quill() {
             <ColorControls scheme={scheme} categories={categories} onChange={(colors) => patch({ colors })} />
           </div>
 
-          <Glyph parts={parts} layout={layout} colors={colors} showGaps={showGaps} svgRef={svgRef} />
+          <Glyph parts={parts} layout={layout} colors={colors} showGaps={showGaps} />
 
           <div className="decode">
             <input

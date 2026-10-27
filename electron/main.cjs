@@ -66,9 +66,13 @@ ipcMain.handle("store:save", async (_event, json) => {
 
 /* ---------------- import / export dialogs ---------------- */
 
-ipcMain.handle("file:export", async (event, { defaultName, content }) => {
+// `content` is text by default; with encoding "base64" it is binary data (PNG, JPG, PDF…).
+ipcMain.handle("file:export", async (event, { defaultName, content, encoding }) => {
   if (typeof defaultName !== "string" || typeof content !== "string") {
     throw new Error("Invalid export request");
+  }
+  if (encoding !== undefined && encoding !== "utf8" && encoding !== "base64") {
+    throw new Error("Invalid export encoding");
   }
   const win = BrowserWindow.fromWebContents(event.sender);
   const ext = path.extname(defaultName).slice(1) || "txt";
@@ -77,7 +81,11 @@ ipcMain.handle("file:export", async (event, { defaultName, content }) => {
     filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
   });
   if (canceled || !filePath) return null;
-  await fs.writeFile(filePath, content, "utf8");
+  await fs.writeFile(
+    filePath,
+    encoding === "base64" ? Buffer.from(content, "base64") : content,
+    encoding === "base64" ? undefined : "utf8"
+  );
   return filePath;
 });
 

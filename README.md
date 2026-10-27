@@ -57,6 +57,25 @@ Every spell has a colour scheme, shown in the Quill under the representation pic
 New spells start from the default scheme in **Settings → Default colours**; **Use default** in the Quill returns to it.
 A saved spell keeps its own scheme, so changing the default never recolours your Spellbook.
 
+## Exporting
+
+**Export ▾** (in the Quill and on every Spellbook card) saves a spell as:
+
+| Format | What you get |
+| --- | --- |
+| **PNG** | The glyph, ~2000 px wide, with transparent rounded corners. |
+| **JPG** | The same on a dark backdrop, smaller file. |
+| **PDF** | One A4 page: the glyph, the spell written out (name, binary, every category with its field and bits) and the description. |
+| **SVG** | The glyph as a vector image. |
+
+In the PDF the glyph goes **across the top** (portrait page) for the *Line* representation, and on the **right** (landscape page)
+for *Circle*, *Rows* and *Superposed*; the details are written on the left and the description runs along the bottom.
+A new representation picks its side with `pdfSide: "top" | "right"` in `LAYOUTS` (default `"right"`).
+
+Notes: the PDF uses built-in fonts, so characters outside Western European alphabets (e.g. CJK, emoji) print as `?`.
+Very long text is shortened with "..." so a spell always fits on a single page. Exports use the colours and the
+"show gaps" setting you see on screen.
+
 ## Adding a new representation
 
 Open `src/lib/spell.js` and add an entry to `LAYOUTS`. It receives the width of each category and returns
@@ -71,6 +90,7 @@ electron/preload.cjs   the small API exposed to the page (window.api)
 src/store.jsx          app state + auto-save
 src/lib/spell.js       data model, encoding/decoding, representations
 src/lib/platform.js    Electron API wrapper (falls back to localStorage in a browser)
+src/lib/export.js      PNG / JPG / PDF / SVG rendering
 src/pages/             Spellbook, Quill, Settings
 src/components/        Glyph (SVG), Binary
 ```

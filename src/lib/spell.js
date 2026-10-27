@@ -201,7 +201,8 @@ export function normalizeData(raw) {
 /*  Each one turns the list of category widths into geometry:          */
 /*  { w, h, nodes: [{x,y}], bits: [svg path per bit] }                 */
 /*  Bit i = 1 -> draw bits[i]; bit i = 0 -> leave a gap.               */
-/*  Add your own by adding an entry to LAYOUTS.                        */
+/*  `pdfSide` ("top" | "right", default "right") says where the glyph  */
+/*  goes on an exported PDF page. Add your own entry to LAYOUTS.       */
 /* ------------------------------------------------------------------ */
 
 const STEP = 44;
@@ -211,6 +212,7 @@ const seg = (a, b) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
 export const LAYOUTS = {
   line: {
     label: "Line",
+    pdfSide: "top", // PDF: glyph across the top of the page
     build(widths) {
       const n = widths.reduce((s, x) => s + x, 0);
       const pts = Array.from({ length: n + 1 }, (_, k) => ({ x: PAD + k * STEP, y: 60 }));
@@ -225,6 +227,7 @@ export const LAYOUTS = {
 
   circle: {
     label: "Circle",
+    pdfSide: "right", // PDF: glyph on the right, details on the left
     build(widths) {
       const n = widths.reduce((s, x) => s + x, 0);
       const r = Math.max(90, n * 14);
@@ -244,6 +247,7 @@ export const LAYOUTS = {
 
   rows: {
     label: "Rows",
+    pdfSide: "right",
     build(widths) {
       const rowH = 56;
       const maxW = Math.max(...widths, 1);
@@ -270,6 +274,7 @@ export const LAYOUTS = {
    */
   superposed: {
     label: "Superposed",
+    pdfSide: "right",
     build(widths) {
       const N = Math.max(3, ...widths.map((b, i) => b * (i + 1)));
       const r = Math.max(110, N * 14);

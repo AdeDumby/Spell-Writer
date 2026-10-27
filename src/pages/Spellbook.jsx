@@ -1,13 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Glyph from "../components/Glyph.jsx";
 import Binary from "../components/Binary.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
 import { LAYOUTS, binaryOf, resolveColors, selectionFromParts } from "../lib/spell.js";
-import { exportText, serializeSvg } from "../lib/platform.js";
 import { useStore } from "../store.jsx";
 
 function SpellCard({ spell, onEdit, onDelete, onLayout }) {
-  const svgRef = useRef(null);
-  const binary = binaryOf(spell.parts);
   const colors = resolveColors(spell.parts, spell.colors);
 
   return (
@@ -17,7 +15,7 @@ function SpellCard({ spell, onEdit, onDelete, onLayout }) {
         <span className="muted">{new Date(spell.updatedAt).toLocaleDateString()}</span>
       </div>
 
-      <Glyph parts={spell.parts} layout={spell.layout} colors={colors} svgRef={svgRef} className="glyph thumb" />
+      <Glyph parts={spell.parts} layout={spell.layout} colors={colors} className="glyph thumb" />
       <Binary parts={spell.parts} colors={colors} size="sm" />
 
       <ul className="chips">
@@ -39,11 +37,7 @@ function SpellCard({ spell, onEdit, onDelete, onLayout }) {
           ))}
         </select>
         <button onClick={onEdit}>Open in Quill</button>
-        <button
-          onClick={() => svgRef.current && exportText(`${spell.name}-${binary}.svg`, serializeSvg(svgRef.current), "image/svg+xml")}
-        >
-          SVG
-        </button>
+        <ExportMenu up getSpell={() => spell} />
         <button className="danger" onClick={onDelete}>
           Delete
         </button>

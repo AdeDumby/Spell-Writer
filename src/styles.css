@@ -107,3 +107,14 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 button.link:hover:not(:disabled) { text-decoration: underline; border: none; }
 .colors-row { margin: 12px 0 14px; }
 .colors-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; }
+
+/* ---------- Export menu ---------- */
+.menu { position: relative; display: inline-flex; align-items: center; gap: 10px; }
+.menu-pop { position: absolute; z-index: 20; left: 0; top: calc(100% + 6px); min-width: 230px; padding: 4px;
+  background: var(--panel); border: 1px solid #5b6bb5; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+.menu-pop.up { top: auto; bottom: calc(100% + 6px); }
+.menu-pop button { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; text-align: left; background: transparent; border-color: transparent; }
+.menu-pop button:hover { background: #25305a; border-color: transparent; }
+.menu-pop .muted { font-size: 12px; }
+.export-ok { color: #6bffb8; font-size: 13px; }
+.export-err { margin: 0; }
