@@ -5,7 +5,9 @@ import { LAYOUTS, colorFor } from "../lib/spell.js";
  * It only needs the spell's `parts` (bits per category) and a layout name,
  * so it works for saved spells and for the one being written in the Quill.
  */
-export default function Glyph({ parts, layout, showGaps = true, svgRef, className = "glyph" }) {
+export default function Glyph({ parts, layout, colors, showGaps = true, svgRef, className = "glyph" }) {
+  // `colors` is one colour per category; fall back to the built-in palette.
+  const colorAt = (ci) => colors?.[ci] ?? colorFor(ci);
   const widths = parts.map((p) => p.bits.length);
   const geo = (LAYOUTS[layout] ?? LAYOUTS.line).build(widths);
   const bitMeta = parts.flatMap((p, ci) =>
@@ -28,7 +30,7 @@ export default function Glyph({ parts, layout, showGaps = true, svgRef, classNam
             key={i}
             d={d}
             fill="none"
-            stroke={colorFor(bitMeta[i].ci)}
+            stroke={colorAt(bitMeta[i].ci)}
             strokeWidth={geo.strokeFor ? geo.strokeFor(bitMeta[i].ci) : 5}
             strokeLinecap="round"
             strokeOpacity={geo.strokeFor ? 0.92 : 1}
@@ -51,7 +53,8 @@ export default function Glyph({ parts, layout, showGaps = true, svgRef, classNam
       {geo.nodes.map((n, i) =>
         n.start ? (
           // The starting dot (top of the ring in the Superposed layout) stands out.
-          <circle key={i} cx={n.x} cy={n.y} r="8" fill="#ffd166" stroke="#0b0d17" strokeWidth="2" />
+          // The white ring keeps it visible even when the spell itself is coloured gold.
+          <circle key={i} cx={n.x} cy={n.y} r="8" fill="#ffd166" stroke="#fff" strokeWidth="2.5" />
         ) : (
           <circle key={i} cx={n.x} cy={n.y} r="5" fill="#0b0d17" stroke="#fff" strokeOpacity="0.6" />
         )

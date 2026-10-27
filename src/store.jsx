@@ -11,6 +11,7 @@ export const emptyDraft = () => ({
   notes: "",
   selection: {}, // { categoryId: fieldIndex }
   layout: null, // null = use the default representation from Settings
+  colors: null, // null = use the default colour scheme from Settings
 });
 
 export function StoreProvider({ children }) {
@@ -39,6 +40,7 @@ export function StoreProvider({ children }) {
       setCategories: (fn) => setData((d) => ({ ...d, categories: fn(d.categories) })),
       resetCategories: () => setData((d) => ({ ...d, categories: defaultCategories() })),
       setDefaultLayout: (defaultLayout) => setData((d) => ({ ...d, defaultLayout })),
+      setDefaultColors: (defaultColors) => setData((d) => ({ ...d, defaultColors })),
 
       saveSpell: (spell) =>
         setData((d) => {

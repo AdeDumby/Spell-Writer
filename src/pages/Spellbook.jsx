@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import Glyph from "../components/Glyph.jsx";
 import Binary from "../components/Binary.jsx";
-import { LAYOUTS, binaryOf, colorFor, selectionFromParts } from "../lib/spell.js";
+import { LAYOUTS, binaryOf, resolveColors, selectionFromParts } from "../lib/spell.js";
 import { exportText, serializeSvg } from "../lib/platform.js";
 import { useStore } from "../store.jsx";
 
 function SpellCard({ spell, onEdit, onDelete, onLayout }) {
   const svgRef = useRef(null);
   const binary = binaryOf(spell.parts);
+  const colors = resolveColors(spell.parts, spell.colors);
 
   return (
     <article className="card spell">
@@ -16,12 +17,12 @@ function SpellCard({ spell, onEdit, onDelete, onLayout }) {
         <span className="muted">{new Date(spell.updatedAt).toLocaleDateString()}</span>
       </div>
 
-      <Glyph parts={spell.parts} layout={spell.layout} svgRef={svgRef} className="glyph thumb" />
-      <Binary parts={spell.parts} size="sm" />
+      <Glyph parts={spell.parts} layout={spell.layout} colors={colors} svgRef={svgRef} className="glyph thumb" />
+      <Binary parts={spell.parts} colors={colors} size="sm" />
 
       <ul className="chips">
         {spell.parts.map((p, i) => (
-          <li key={i} style={{ borderColor: colorFor(i) }}>
+          <li key={i} style={{ borderColor: colors[i] }}>
             <span className="muted">{p.category}</span> {p.field}
           </li>
         ))}
@@ -85,6 +86,7 @@ export default function Spellbook() {
       notes: spell.notes,
       selection,
       layout: spell.layout,
+      colors: spell.colors,
     });
     setPage("quill");
   };
@@ -112,7 +114,7 @@ export default function Spellbook() {
           <button
             className="primary"
             onClick={() => {
-              setDraft({ editingId: null, name: "", notes: "", selection: {}, layout: null });
+              setDraft({ editingId: null, name: "", notes: "", selection: {}, layout: null, colors: null });
               setPage("quill");
             }}
           >

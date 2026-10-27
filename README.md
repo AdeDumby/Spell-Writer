@@ -46,6 +46,17 @@ Everything is stored in one file, `spellbook.json`, in Electron's per-user data 
 | **Rows** | One row per category. |
 | **Superposed** | All categories share one ring of dots and every one starts on the top dot (drawn in gold). Category #1 links neighbouring dots, #2 skips every other dot, #3 hops 3 dots, and so on. Bit *j* of category *k* is the chord from dot *j·k* to dot *(j+1)·k*, wrapping around. The ring has `max(bits × step)` dots (at least 3), so a 3-bit category in 2nd position needs 6. |
 
+## Colours
+
+Every spell has a colour scheme, shown in the Quill under the representation picker:
+
+- **Palette**: the built-in colour per category.
+- **Custom**: pick a colour for each category (starts from the palette, so nothing jumps when you switch).
+- **Mono**: one colour for the whole spell, from a colour picker or a few presets.
+
+New spells start from the default scheme in **Settings → Default colours**; **Use default** in the Quill returns to it.
+A saved spell keeps its own scheme, so changing the default never recolours your Spellbook.
+
 ## Adding a new representation
 
 Open `src/lib/spell.js` and add an entry to `LAYOUTS`. It receives the width of each category and returns

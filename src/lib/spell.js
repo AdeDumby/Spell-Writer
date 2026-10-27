@@ -5,10 +5,15 @@
 /*    A field's value is its index in the list, written in binary.     */
 /*    `bits` can only widen a category; the minimum is ceil(log2(n)).  */
 /*                                                                     */
-/*  spell = { id, name, notes, layout, createdAt, updatedAt,           */
+/*  spell = { id, name, notes, layout, colors, createdAt, updatedAt,  */
 /*            parts: [{ categoryId, category, field, bits }] }         */
 /*    A spell stores its own snapshot (labels + bits), so editing the  */
 /*    categories later never changes a spell that is already written.  */
+/*                                                                     */
+/*  colors (a "scheme") = { mode, mono, custom }                       */
+/*    mode "auto"   -> built-in palette, one hue per category          */
+/*    mode "custom" -> custom[categoryId], falling back to the palette */
+/*    mode "mono"   -> every category uses the single `mono` colour    */
 /* ------------------------------------------------------------------ */
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
@@ -26,7 +31,64 @@ export const defaultCategories = () => [
 export const autoBits = (n) => Math.max(1, Math.ceil(Math.log2(Math.max(n, 1))));
 export const widthOf = (c) => Math.max(autoBits(c.fields.length), c.bits || 0);
 export const toBin = (v, w) => v.toString(2).padStart(w, "0");
-export const colorFor = (i) => `hsl(${(i * 57 + 200) % 360} 85% 66%)`;
+
+/* ------------------------------------------------------------------ */
+/*  Colours                                                            */
+/* ------------------------------------------------------------------ */
+
+// Colours are plain #rrggbb strings so they can go straight into <input type="color">.
+const hslToHex = (h, s, l) => {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return (
+    "#" +
+    [f(0), f(8), f(4)]
+      .map((x) => Math.round(x * 255).toString(16).padStart(2, "0"))
+      .join("")
+  );
+};
+
+/** The built-in palette: one hue per category position. */
+export const colorFor = (i) => hslToHex((i * 57 + 200) % 360, 85, 66);
+
+export const COLOR_MODES = { auto: "Palette", custom: "Custom", mono: "Mono" };
+export const DEFAULT_MONO = "#9fb0ff";
+export const MONO_PRESETS = ["#9fb0ff", "#ffffff", "#ffd166", "#ff6b6b", "#6bffb8", "#c084fc"];
+
+export const defaultScheme = () => ({ mode: "auto", mono: DEFAULT_MONO, custom: {} });
+
+const isHex = (v) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+
+/** Make any stored/imported value into a valid colour scheme. */
+export function normalizeScheme(raw) {
+  const base = defaultScheme();
+  if (!raw || typeof raw !== "object") return base;
+  const custom = {};
+  if (raw.custom && typeof raw.custom === "object") {
+    for (const [id, v] of Object.entries(raw.custom)) if (isHex(v)) custom[id] = v;
+  }
+  return {
+    mode: COLOR_MODES[raw.mode] ? raw.mode : base.mode,
+    mono: isHex(raw.mono) ? raw.mono : base.mono,
+    custom,
+  };
+}
+
+/**
+ * One colour per item, in order. Works for spell parts ({ categoryId }) and for
+ * categories ({ id }), so the whole UI colours things the same way.
+ */
+export function resolveColors(items, scheme) {
+  const s = scheme ?? defaultScheme();
+  return items.map((item, i) => {
+    if (s.mode === "mono") return s.mono;
+    if (s.mode === "custom") return s.custom[item.categoryId ?? item.id] ?? colorFor(i);
+    return colorFor(i);
+  });
+}
 
 export const moveItem = (arr, i, d) => {
   const j = i + d;
@@ -89,7 +151,7 @@ export function decodeBinary(categories, text) {
 export function normalizeData(raw) {
   const fallbackCats = defaultCategories();
   if (!raw || typeof raw !== "object") {
-    return { categories: fallbackCats, defaultLayout: "line", spells: [] };
+    return { categories: fallbackCats, defaultLayout: "line", defaultColors: defaultScheme(), spells: [] };
   }
 
   const categories =
@@ -115,6 +177,7 @@ export function normalizeData(raw) {
       name: String(s.name ?? "Untitled spell"),
       notes: String(s.notes ?? ""),
       layout: LAYOUTS[s.layout] ? s.layout : "line",
+      colors: normalizeScheme(s.colors),
       createdAt: Number(s.createdAt) || Date.now(),
       updatedAt: Number(s.updatedAt) || Date.now(),
       parts: s.parts.map((p) => ({
@@ -128,6 +191,7 @@ export function normalizeData(raw) {
   return {
     categories,
     defaultLayout: LAYOUTS[raw.defaultLayout] ? raw.defaultLayout : "line",
+    defaultColors: normalizeScheme(raw.defaultColors),
     spells,
   };
 }

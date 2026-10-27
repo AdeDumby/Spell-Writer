@@ -95,3 +95,15 @@ aside .card, section .card + .card { margin-top: 16px; }
 .bits { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
 .bits input { width: 54px; }
 .add { color: var(--muted); }
+
+/* ---------- Colour controls ---------- */
+.colors { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.swatch { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.swatch input[type="color"] { width: 30px; height: 26px; padding: 0; border-radius: 6px; cursor: pointer; background: none; }
+.dot { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid var(--line); }
+.dot.on { border-color: #fff; }
+button.link { background: none; border: none; color: var(--accent); padding: 0; font-size: 13px; }
+button.link:hover:not(:disabled) { text-decoration: underline; border: none; }
+.colors-row { margin: 12px 0 14px; }
+.colors-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; }

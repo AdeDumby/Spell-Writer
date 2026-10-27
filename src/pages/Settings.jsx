@@ -1,10 +1,11 @@
 import { useState } from "react";
+import ColorControls from "../components/ColorControls.jsx";
 import {
   LAYOUTS,
   autoBits,
-  colorFor,
   mk,
   moveItem,
+  resolveColors,
   toBin,
   widthOf,
 } from "../lib/spell.js";
@@ -12,8 +13,9 @@ import { exportText, importText } from "../lib/platform.js";
 import { useStore } from "../store.jsx";
 
 export default function Settings() {
-  const { data, setCategories, resetCategories, setDefaultLayout, replaceAll } = useStore();
+  const { data, setCategories, resetCategories, setDefaultLayout, setDefaultColors, replaceAll } = useStore();
   const { categories } = data;
+  const catColors = resolveColors(categories, data.defaultColors);
   const [message, setMessage] = useState("");
 
   const patchCat = (id, fn) => setCategories((cs) => cs.map((c) => (c.id === id ? fn(c) : c)));
@@ -61,7 +63,7 @@ export default function Settings() {
       <div className="two-col">
         <section>
           {categories.map((c, ci) => (
-            <div className="cat card" key={c.id} style={{ borderLeftColor: colorFor(ci) }}>
+            <div className="cat card" key={c.id} style={{ borderLeftColor: catColors[ci] }}>
               <div className="cat-head">
                 <input
                   className="name"
@@ -155,6 +157,20 @@ export default function Settings() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="card">
+            <h3>Default colours</h3>
+            <p className="hint">
+              Used for new spells: the built-in palette, your own colour per category, or a single
+              colour for everything. Each spell can still pick its own in the Quill, and spells already
+              written keep the colours they were saved with.
+            </p>
+            <ColorControls
+              scheme={data.defaultColors}
+              categories={categories}
+              onChange={setDefaultColors}
+            />
           </div>
 
           <div className="card">
