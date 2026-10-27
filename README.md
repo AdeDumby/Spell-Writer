@@ -65,15 +65,21 @@ A saved spell keeps its own scheme, so changing the default never recolours your
 | --- | --- |
 | **PNG** | The glyph, ~2000 px wide, with transparent rounded corners. |
 | **JPG** | The same on a dark backdrop, smaller file. |
-| **PDF** | One A4 page: the glyph, the spell written out (name, binary, every category with its field and bits) and the description. |
+| **PDF** | One portrait A4 page written like a page from a spellbook (see below). |
 | **SVG** | The glyph as a vector image. |
 
-In the PDF the glyph goes **across the top** (portrait page) for the *Line* representation, and on the **right** (landscape page)
-for *Circle*, *Rows* and *Superposed*; the details are written on the left and the description runs along the bottom.
-A new representation picks its side with `pdfSide: "top" | "right"` in `LAYOUTS` (default `"right"`).
+The PDF page has a parchment background (generated on the fly, so every spell gets its own sheet), a thin border,
+calligraphic lettering (Pinyon Script and IM Fell English Italic, both bundled under the SIL Open Font Licence in
+`src/assets/fonts`), and the glyph redrawn in pen and ink: your colours darkened to ink tones, with a wax-red dot where
+the Superposed layout starts. Only what a person would write is on it: the name, each category with its value written
+out, and the description opened with a drop cap. No bit strings, no representation names, no dates.
 
-Notes: the PDF uses built-in fonts, so characters outside Western European alphabets (e.g. CJK, emoji) print as `?`.
-Very long text is shortened with "..." so a spell always fits on a single page. Exports use the colours and the
+For the *Line* representation the glyph runs across the top of the page; for *Circle*, *Rows* and *Superposed* the
+details sit on the left and the glyph on the right. A new representation picks its side with
+`pdfSide: "top" | "right"` in `LAYOUTS` (default `"right"`).
+
+Notes: characters the fonts cannot draw (e.g. CJK, emoji) are left out of the PDF. Very long text is shortened with "…"
+so a spell always fits on a single page. PNG, JPG and SVG keep the on-screen dark look. Exports use the colours and the
 "show gaps" setting you see on screen.
 
 ## Adding a new representation
@@ -90,7 +96,9 @@ electron/preload.cjs   the small API exposed to the page (window.api)
 src/store.jsx          app state + auto-save
 src/lib/spell.js       data model, encoding/decoding, representations
 src/lib/platform.js    Electron API wrapper (falls back to localStorage in a browser)
-src/lib/export.js      PNG / JPG / PDF / SVG rendering
+src/lib/export.js      PNG / JPG / PDF / SVG rendering (PDF page design lives here)
+src/lib/paper.js       procedural parchment texture
+src/lib/pdfFonts.js    calligraphy fonts for the PDF (loaded only on PDF export)
 src/pages/             Spellbook, Quill, Settings
 src/components/        Glyph (SVG), Binary
 ```
