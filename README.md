@@ -1,0 +1,56 @@
+# Spell Writer
+
+A desktop app (Electron + Vite + React) for writing spells as binary glyphs.
+
+| Page | What it does |
+| --- | --- |
+| **Spellbook** | Every saved spell, with its glyph, binary and fields. Search, switch representation, export SVG, open in the Quill, delete. |
+| **Quill** | Write a spell: pick one field per category, watch the binary and glyph update, save it. You can also paste a binary string to decode it. |
+| **Settings** | Edit categories, their fields, order and bit width. Default representation, backup export/import, reset. |
+
+## Run it
+
+```bash
+npm install
+npm run dev      # Vite dev server + Electron window with hot reload
+```
+
+Other scripts:
+
+```bash
+npm start        # build the web app, then open it in Electron
+npm run dist     # build an installer into ./release (via electron-builder)
+```
+
+Node 18+ is required.
+
+## Where the data lives
+
+Everything is stored in one file, `spellbook.json`, in Electron's per-user data folder
+(`%APPDATA%/spell-writer` on Windows, `~/Library/Application Support/spell-writer` on macOS,
+`~/.config/spell-writer` on Linux). Use **Settings → Export backup** to copy it elsewhere.
+
+## How spells are encoded
+
+- Each category's bit width is `ceil(log2(number of fields))` (minimum 1). You can widen it in Settings.
+- A field's value is its position in the list, starting at 0.
+- A spell is the concatenation of every category's bits, in category order.
+- A saved spell keeps its own snapshot of bits and labels, so editing the categories later never rewrites it.
+
+## Adding a new representation
+
+Open `src/lib/spell.js` and add an entry to `LAYOUTS`. It receives the width of each category and returns
+node positions plus one SVG path per bit (drawn when the bit is 1, left as a gap when it is 0).
+It then appears everywhere automatically.
+
+## Layout
+
+```
+electron/main.cjs      window, file storage, import/export dialogs
+electron/preload.cjs   the small API exposed to the page (window.api)
+src/store.jsx          app state + auto-save
+src/lib/spell.js       data model, encoding/decoding, representations
+src/lib/platform.js    Electron API wrapper (falls back to localStorage in a browser)
+src/pages/             Spellbook, Quill, Settings
+src/components/        Glyph (SVG), Binary
+```
