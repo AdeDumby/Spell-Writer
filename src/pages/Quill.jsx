@@ -38,6 +38,7 @@ export default function Quill() {
     saveSpell({
       id: keepId ? existing.id : uid(),
       name: draft.name.trim() || `Spell ${spells.length + (keepId ? 0 : 1)}`,
+      preamble: draft.preamble,
       notes: draft.notes,
       layout,
       colors: scheme,
@@ -118,12 +119,22 @@ export default function Quill() {
           </div>
 
           <label className="stack">
-            <span className="label">Notes</span>
+            <span className="label">Preamble</span>
             <textarea
-              rows={4}
+              rows={3}
+              value={draft.preamble}
+              onChange={(e) => patch({ preamble: e.target.value })}
+              placeholder="A few words that open the page, right under the title…"
+            />
+          </label>
+
+          <label className="stack">
+            <span className="label">Description</span>
+            <textarea
+              rows={5}
               value={draft.notes}
               onChange={(e) => patch({ notes: e.target.value })}
-              placeholder="Incantation, cost, side effects…"
+              placeholder="The full account: incantation, cost, side effects…"
             />
           </label>
         </section>
@@ -153,6 +164,7 @@ export default function Quill() {
             <ExportMenu
               getSpell={() => ({
                 name: draft.name.trim() || `Spell ${spells.length + (existing ? 0 : 1)}`,
+                preamble: draft.preamble,
                 notes: draft.notes,
                 layout,
                 colors: scheme,

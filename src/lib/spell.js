@@ -5,7 +5,8 @@
 /*    A field's value is its index in the list, written in binary.     */
 /*    `bits` can only widen a category; the minimum is ceil(log2(n)).  */
 /*                                                                     */
-/*  spell = { id, name, notes, layout, colors, createdAt, updatedAt,  */
+/*  spell = { id, name, preamble, notes, layout, colors,               */
+/*            createdAt, updatedAt,                                    */
 /*            parts: [{ categoryId, category, field, bits }] }         */
 /*    A spell stores its own snapshot (labels + bits), so editing the  */
 /*    categories later never changes a spell that is already written.  */
@@ -175,6 +176,7 @@ export function normalizeData(raw) {
     .map((s) => ({
       id: s.id,
       name: String(s.name ?? "Untitled spell"),
+      preamble: String(s.preamble ?? ""),
       notes: String(s.notes ?? ""),
       layout: LAYOUTS[s.layout] ? s.layout : "line",
       colors: normalizeScheme(s.colors),

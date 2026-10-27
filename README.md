@@ -71,15 +71,19 @@ A saved spell keeps its own scheme, so changing the default never recolours your
 The PDF page has a parchment background (generated on the fly, so every spell gets its own sheet), a thin border,
 calligraphic lettering (Pinyon Script and IM Fell English Italic, both bundled under the SIL Open Font Licence in
 `src/assets/fonts`), and the glyph redrawn in pen and ink: your colours darkened to ink tones, with a wax-red dot where
-the Superposed layout starts. Only what a person would write is on it: the name, each category with its value written
-out, and the description opened with a drop cap. No bit strings, no representation names, no dates.
+the Superposed layout starts. Top to bottom it reads:
 
-For the *Line* representation the glyph runs across the top of the page; for *Circle*, *Rows* and *Superposed* the
-details sit on the left and the glyph on the right. A new representation picks its side with
-`pdfSide: "top" | "right"` in `LAYOUTS` (default `"right"`).
+1. the **title**,
+2. the **preamble** (a short opening, written in the Quill's *Preamble* box),
+3. the **categories**, written out as a ledger with the label and its value at the same size (long values wrap onto
+   more lines, they are never cut), with the glyph beside them on the right (or across the very top for *Line*),
+4. the **description** (the Quill's *Description* box), opened with a drop cap.
 
-Notes: characters the fonts cannot draw (e.g. CJK, emoji) are left out of the PDF. Very long text is shortened with "…"
-so a spell always fits on a single page. PNG, JPG and SVG keep the on-screen dark look. Exports use the colours and the
+Only what a person would write is on it: no bit strings, no representation names, no dates. Empty preamble or
+description are simply left out.
+
+Notes: characters the fonts cannot draw (e.g. CJK, emoji) are left out of the PDF. The writing shrinks a little (down to 82%) when a page is full. Only if that is not enough is the description
+shortened with "…", so a spell always fits on a single page. PNG, JPG and SVG keep the on-screen dark look. Exports use the colours and the
 "show gaps" setting you see on screen.
 
 ## Adding a new representation

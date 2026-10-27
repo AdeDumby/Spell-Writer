@@ -118,3 +118,5 @@ button.link:hover:not(:disabled) { text-decoration: underline; border: none; }
 .menu-pop .muted { font-size: 12px; }
 .export-ok { color: #6bffb8; font-size: 13px; }
 .export-err { margin: 0; }
+
+.preamble { color: var(--text); font-style: italic; font-size: 13px; margin: 6px 0; white-space: pre-wrap; }

@@ -26,6 +26,7 @@ function SpellCard({ spell, onEdit, onDelete, onLayout }) {
         ))}
       </ul>
 
+      {spell.preamble && <p className="preamble">{spell.preamble}</p>}
       {spell.notes && <p className="notes">{spell.notes}</p>}
 
       <div className="toolbar">
@@ -58,6 +59,7 @@ export default function Spellbook() {
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.notes.toLowerCase().includes(q) ||
+        (s.preamble ?? "").toLowerCase().includes(q) ||
         binaryOf(s.parts).includes(q) ||
         s.parts.some((p) => p.field.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
     );
@@ -77,6 +79,7 @@ export default function Spellbook() {
     setDraft({
       editingId: spell.id,
       name: spell.name,
+      preamble: spell.preamble ?? "",
       notes: spell.notes,
       selection,
       layout: spell.layout,
@@ -108,7 +111,7 @@ export default function Spellbook() {
           <button
             className="primary"
             onClick={() => {
-              setDraft({ editingId: null, name: "", notes: "", selection: {}, layout: null, colors: null });
+              setDraft({ editingId: null, name: "", preamble: "", notes: "", selection: {}, layout: null, colors: null });
               setPage("quill");
             }}
           >

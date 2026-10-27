@@ -138,6 +138,8 @@ function darken(hex, maxLightness = 0.36) {
 
 const INK = [43, 29, 20]; // dark sepia
 const SEPIA = [124, 90, 56]; // softer brown for labels and rules
+// Pinyon Script's lowercase is shorter than IM Fell's, so it is set larger to look the same size next to it.
+const SCRIPT_MATCH = 0.437 / 0.356;
 
 /** A cubic bezier from (x0,y0) to (x1,y1). */
 const bezier = (doc, x0, y0, c1x, c1y, c2x, c2y, x1, y1) =>
@@ -157,7 +159,7 @@ function flourish(doc, cx, y, halfWidth) {
   }
 }
 
-/** Greedy word wrap that lets the first lines be narrower (room for a drop cap). */
+/** Greedy word wrap that lets the first lines be narrower (room for a drop cap); very long words are broken. */
 function wrapText(doc, text, widthFor) {
   const lines = [];
   for (const para of text.split("\n")) {
@@ -167,6 +169,24 @@ function wrapText(doc, text, widthFor) {
     }
     let line = "";
     for (const word of para.split(/\s+/).filter(Boolean)) {
+      if (doc.getTextWidth(word) > widthFor(lines.length)) {
+        // A single word wider than the column: break it by letters instead of overflowing.
+        if (line) {
+          lines.push(line);
+          line = "";
+        }
+        let chunk = "";
+        for (const ch of word) {
+          if (chunk && doc.getTextWidth(chunk + ch) > widthFor(lines.length)) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk += ch;
+          }
+        }
+        line = chunk;
+        continue;
+      }
       const trial = line ? `${line} ${word}` : word;
       if (line && doc.getTextWidth(trial) > widthFor(lines.length)) {
         lines.push(line);
@@ -183,9 +203,9 @@ function wrapText(doc, text, widthFor) {
 /**
  * One portrait A4 page, written like a page from a spellbook:
  *   - parchment background, a thin border, calligraphic lettering
- *   - "line" glyphs (pdfSide: "top")      -> glyph across the top, then the title and the details
- *   - everything else (pdfSide: "right")  -> title at the top, details on the left, glyph on the right
- *   - the description runs along the bottom, opened with a drop cap
+ *   - "line" glyphs (pdfSide: "top")      -> glyph across the top, then the title
+ *   - everything else (pdfSide: "right")  -> title first; the glyph sits on the right of the categories
+ *   - order: title, preamble, categories (label and value at one size, long values wrap), description
  * Only what a person would write is on the page: no bit strings, no representation names, no dates.
  */
 async function buildPdf(spell) {
@@ -229,132 +249,185 @@ async function buildPdf(spell) {
     return t.trimEnd() + "…";
   };
 
-  // ----- the description, laid out first so the page can make room for it -----
+  // ----- measuring ----------------------------------------------------------------------------
+  // The page is laid out first, at a text scale (1 = full size). If the content does not fit, the scale
+  // shrinks a little and everything is measured again. Fields are never cut: they wrap onto more lines.
+  const preamble = pdfSafe(spell.preamble).trim();
   const notes = pdfSafe(spell.notes).trim();
-  const LH = 6.3; // line height
-  const DESC_PAD = 11; // flourish and breathing room above the text
-  const MAX_DESC = 98;
-  let dropCap = false;
-  let capW = 0;
-  let descLines = [];
-  if (notes) {
-    dropCap = /\p{L}/u.test(notes[0]);
-    if (dropCap) {
-      setScript(46);
-      capW = doc.getTextWidth(notes[0]) + 5.5;
+  const parts = spell.parts;
+  const PAGE_BOTTOM = PH - 22;
+
+  // Title (does not depend on the scale): script, centred, on one line if it fits, otherwise two.
+  let titleSize = 40;
+  let titleLines = [];
+  const titleText = pdfSafe(spell.name) || "Untitled";
+  for (const sz of [40, 34, 29, 24, 20]) {
+    titleSize = sz;
+    setScript(sz);
+    titleLines = doc.splitTextToSize(titleText, innerW);
+    if (titleLines.length === 1) break;
+  }
+  if (titleLines.length > 2) {
+    titleLines = titleLines.slice(0, 2);
+    titleLines[1] = fitText(titleLines[1] + " …", innerW);
+  }
+  const titleLead = titleSize * 0.3528 * 1.05;
+  const titleH = titleLead * (titleLines.length + 0.15);
+
+  const dropCap = !!notes && /\p{L}/u.test(notes[0]);
+  const fitGlyph = (maxW, maxH) => {
+    const f = Math.min(maxW / gw, maxH / gh);
+    return { dw: gw * f, dh: gh * f };
+  };
+
+  const plan = (s, trimDescription) => {
+    const gs = Math.min(1, Math.max(0.62, s)); // the glyph shrinks more slowly than the text, and never grows
+    const P = { s };
+
+    // Details: one entry per category, label and value at the same size.
+    const colW = glyphOnTop ? innerW : 82;
+    const ds = 15 * s; // labels (italic)
+    const vs = ds * SCRIPT_MATCH; // values (script), optically the same size as the labels
+    const lead = vs * 0.3528 * 1.2;
+    setItalic(ds);
+    const natural = Math.max(0, ...parts.map((p) => doc.getTextWidth(pdfSafe(p.category))));
+    const labelW = Math.min(colW * 0.5, Math.max(colW * 0.3, natural + 5));
+    const valueW = colW - labelW - 1;
+    P.rows = parts.map((p) => {
+      setItalic(ds);
+      const labelLines = wrapText(doc, pdfSafe(p.category), () => labelW - 3);
+      setScript(vs);
+      const valueLines = wrapText(doc, pdfSafe(p.field) || "—", () => valueW);
+      const n = Math.max(labelLines.length, valueLines.length, 1);
+      return { labelLines, valueLines, h: n * lead + 3.4 * s };
+    });
+    Object.assign(P, { colW, ds, vs, lead, labelW });
+    const detailsH = P.rows.reduce((a, r) => a + r.h, 0);
+
+    // Header: [glyph on top] flourish, title, preamble.
+    let y;
+    if (glyphOnTop) {
+      const g = fitGlyph(innerW, 105 * gs);
+      P.glyph = { x: M + (innerW - g.dw) / 2, y: 16, ...g };
+      P.flourishTop = 16 + g.dh + 7;
+      P.titleTop = P.flourishTop + 7;
+      y = P.titleTop + titleH + 4;
+    } else {
+      P.titleTop = 18;
+      P.flourishTop = P.titleTop + titleH + 2.5;
+      y = P.flourishTop + 8;
     }
-    setItalic(12.5);
-    const body = dropCap ? notes.slice(1).replace(/^\s+/, "") : notes;
-    descLines = wrapText(doc, body, (i) => (dropCap && i < 2 ? innerW - capW : innerW));
-    const maxLines = Math.floor((MAX_DESC - DESC_PAD) / LH) + 1;
-    if (descLines.length > maxLines) {
-      descLines = descLines.slice(0, maxLines);
-      descLines[maxLines - 1] = fitText(descLines[maxLines - 1] + " \u2026", innerW);
+    P.preSize = 13.5 * s;
+    P.preLead = 6.1 * s;
+    P.preLines = [];
+    if (preamble) {
+      setItalic(P.preSize);
+      P.preLines = wrapText(doc, preamble, () => innerW - 24);
+      P.preTop = y;
+      y += P.preLines.length * P.preLead + 5;
+    } else if (glyphOnTop) {
+      y += 1;
+    }
+
+    // The pair: details on the left, glyph on the right (or details alone under a top glyph).
+    P.pairTop = y;
+    let pairH = detailsH;
+    if (!glyphOnTop) {
+      const gx = M + colW + 6;
+      const boxW = PW - M - gx;
+      const g = fitGlyph(boxW * gs, 400);
+      P.glyph = { x: gx + (boxW - g.dw) / 2, y, ...g };
+      pairH = Math.max(detailsH, g.dh);
+    }
+
+    // The description follows the categories.
+    P.descFlourish = y + pairH + 11;
+    P.descLines = [];
+    P.end = y + pairH;
+    if (notes) {
+      P.descSize = 12.5 * s;
+      P.descLead = 6.3 * s;
+      P.capSize = 46 * s;
+      P.capW = 0;
+      if (dropCap) {
+        setScript(P.capSize);
+        P.capW = doc.getTextWidth(notes[0]) + 5.5 * s;
+      }
+      setItalic(P.descSize);
+      const body = dropCap ? notes.slice(1).replace(/^\s+/, "") : notes;
+      let lines = wrapText(doc, body, (i) => (dropCap && i < 2 ? innerW - P.capW : innerW));
+      P.descTop = P.descFlourish + 10.5 * Math.max(s, 0.7);
+      // Last resort only (see below): shorten the description to what is left of the page.
+      const room = Math.floor((PAGE_BOTTOM - 3 - P.descTop) / P.descLead) + 1;
+      const keep = Math.max(room, 6);
+      if (trimDescription && lines.length > keep) {
+        lines = lines.slice(0, keep);
+        lines[keep - 1] = fitText(lines[keep - 1] + " …", innerW);
+      }
+      P.descLines = lines;
+      P.end = P.descTop + (Math.max(lines.length, 2) - 1) * P.descLead + 3;
+    }
+    return P;
+  };
+
+  // First choice: keep everything, shrinking the writing a little if the page needs it (never below 82%).
+  // Only if that is still not enough is the description shortened, and the fields are never cut.
+  const SCALES = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64, 0.58, 0.52, 0.46, 0.4];
+  let P;
+  for (const sc of SCALES.filter((v) => v >= 0.82)) {
+    P = plan(sc, false);
+    if (P.end <= PAGE_BOTTOM) break;
+  }
+  if (P.end > PAGE_BOTTOM) {
+    for (const sc of SCALES) {
+      P = plan(sc, true);
+      if (P.end <= PAGE_BOTTOM) break;
     }
   }
-  // The text hugs the bottom of the page; a short description just leaves more room above.
-  const descH = notes ? DESC_PAD + (Math.max(descLines.length, 2) - 1) * LH + 6 : 0;
-  const descTop = PH - 22 - descH;
-  const upperBottom = notes ? descTop - 9 : PH - 26;
+  const s = P.s;
 
-  // ----- title (script, centred; shrinks to fit on one line, else two) -----
-  const drawTitle = (yTop) => {
-    const name = pdfSafe(spell.name) || "Untitled";
-    let size = 40;
-    let lines;
-    for (const s of [40, 34, 29]) {
-      size = s;
-      setScript(s);
-      lines = doc.splitTextToSize(name, innerW);
-      if (lines.length === 1) break;
-    }
-    if (lines.length > 2) {
-      lines = lines.slice(0, 2);
-      lines[1] = fitText(lines[1] + " \u2026", innerW);
-    }
-    setScript(size);
-    const lead = size * 0.3528 * 1.05;
-    lines.forEach((ln, i) => doc.text(ln, cx, yTop + lead * 0.8 + i * lead, { align: "center" }));
-    return yTop + lead * (lines.length + 0.15);
-  };
+  // ----- drawing ------------------------------------------------------------------------------
+  if (P.glyph) doc.addImage(glyphPng, "PNG", P.glyph.x, P.glyph.y, P.glyph.dw, P.glyph.dh, undefined, "FAST");
 
-  // ----- the details, written out like a ledger: Label ... Value -----
-  const ROW_MAX = 12.5;
-  const drawDetails = (x, yTop, w, bottom) => {
-    const n = spell.parts.length;
-    const avail = bottom - yTop;
-    const MIN_ROW = 7;
-    let rows = n;
-    let hidden = 0;
-    if (n * MIN_ROW > avail) {
-      rows = Math.max(1, Math.floor(avail / MIN_ROW) - 1);
-      hidden = n - rows;
-    }
-    const rowH = Math.min(ROW_MAX, avail / (rows + (hidden ? 1 : 0)));
-    const f = Math.min(1, rowH / 11);
-    const labelW = Math.min(40, w * 0.36);
-    const valueMax = w - 6 - labelW;
-    doc.setLineWidth(0.2).setDrawColor(...SEPIA).setLineDashPattern([0.3, 1.3], 0);
-    for (let i = 0; i < rows; i++) {
-      const p = spell.parts[i];
-      const base = yTop + i * rowH + rowH * 0.72;
-      doc.setFillColor(...inks[i]).circle(x + 1.2, base - 1.6, 1.15, "F");
-      setItalic(11.5 * f);
-      doc.setTextColor(...SEPIA).text(fitText(pdfSafe(p.category), labelW - 2), x + 5, base);
-      setScript(19 * f);
-      doc.setTextColor(...INK).text(fitText(pdfSafe(p.field) || "\u2014", valueMax), x + 5 + labelW, base + 0.4);
-      doc.line(x, base + 2.2, x + w, base + 2.2);
-    }
-    doc.setLineDashPattern([], 0);
-    if (hidden) {
-      setItalic(10);
-      doc.setTextColor(...SEPIA).text(`\u2026 and ${hidden} more`, x + 5, yTop + rows * rowH + 4.5);
-    }
-  };
+  flourish(doc, cx, P.flourishTop, 46);
+  setScript(titleSize);
+  doc.setTextColor(...INK);
+  titleLines.forEach((ln, i) =>
+    doc.text(ln, cx, P.titleTop + titleLead * 0.8 + i * titleLead, { align: "center" })
+  );
 
-  // The glyph keeps its proportions, centred sideways in its box and aligned to the top of it.
-  const placeGlyph = (box) => {
-    const fit = Math.min(box.w / gw, box.h / gh);
-    const dw = gw * fit;
-    const dh = gh * fit;
-    doc.addImage(glyphPng, "PNG", box.x + (box.w - dw) / 2, box.y, dw, dh, undefined, "FAST");
-    return { dw, dh };
-  };
-
-  if (glyphOnTop) {
-    // Glyph first, then flourish, title and details.
-    const { dh } = placeGlyph({ x: M, y: 24, w: innerW, h: 105 });
-    let y = 24 + dh + 7;
-    flourish(doc, cx, y, 46);
-    y = drawTitle(y + 7) + 5;
-    drawDetails(M, y, innerW, upperBottom);
-  } else {
-    // Title, flourish, then details on the left and the glyph on the right.
-    let y = drawTitle(21);
-    flourish(doc, cx, y + 3, 46);
-    y += 15;
-    const leftW = 74;
-    const gx = M + leftW + 6;
-    const box = { x: gx, w: PW - M - gx, h: upperBottom - y };
-    const dh = gh * Math.min(box.w / gw, box.h / gh);
-    const detailsH = Math.min(spell.parts.length * ROW_MAX, upperBottom - y);
-    // Sit the pair a little below the flourish when there is spare room, so the page feels balanced.
-    const top = y + Math.max(0, (upperBottom - y - Math.max(dh, detailsH)) * 0.4);
-    drawDetails(M, top, leftW, upperBottom);
-    placeGlyph({ ...box, y: top });
-  }
-
-  // ----- the description, opened with a drop cap -----
-  if (notes) {
-    flourish(doc, cx, descTop, 30);
-    const textTop = descTop + DESC_PAD;
-    if (dropCap) {
-      setScript(46);
-      doc.setTextColor(...INK).text(notes[0], M - 1.2, textTop + LH + 2.4);
-    }
-    setItalic(12.5);
+  if (P.preLines.length) {
+    setItalic(P.preSize);
     doc.setTextColor(...INK);
-    descLines.forEach((ln, i) => doc.text(ln, M + (dropCap && i < 2 ? capW : 0), textTop + i * LH));
+    P.preLines.forEach((ln, i) => doc.text(ln, cx, P.preTop + P.preLead * 0.8 + i * P.preLead, { align: "center" }));
+  }
+
+  // Categories, written out as a ledger: label and value at the same size, long values wrap.
+  doc.setLineWidth(0.2).setDrawColor(...SEPIA).setLineDashPattern([0.3, 1.3], 0);
+  let ry = P.pairTop;
+  for (const r of P.rows) {
+    const base = ry + 0.5 * s + P.lead * 0.82;
+    setItalic(P.ds);
+    doc.setTextColor(...SEPIA);
+    r.labelLines.forEach((ln, i) => doc.text(ln, M, base + i * P.lead));
+    setScript(P.vs);
+    doc.setTextColor(...INK);
+    r.valueLines.forEach((ln, i) => doc.text(ln, M + P.labelW, base + i * P.lead));
+    doc.line(M, ry + r.h - 0.6 * s, M + P.colW, ry + r.h - 0.6 * s);
+    ry += r.h;
+  }
+  doc.setLineDashPattern([], 0);
+
+  // The description, after the categories, opened with a drop cap.
+  if (P.descLines.length) {
+    flourish(doc, cx, P.descFlourish, 30 * Math.max(s, 0.7));
+    if (dropCap) {
+      setScript(P.capSize);
+      doc.setTextColor(...INK).text(notes[0], M - 1.2, P.descTop + P.descLead + 2.4 * s);
+    }
+    setItalic(P.descSize);
+    doc.setTextColor(...INK);
+    P.descLines.forEach((ln, i) => doc.text(ln, M + (dropCap && i < 2 ? P.capW : 0), P.descTop + i * P.descLead));
   }
 
   return new Blob([doc.output("arraybuffer")], { type: "application/pdf" });

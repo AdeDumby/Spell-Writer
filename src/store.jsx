@@ -8,7 +8,8 @@ export const useStore = () => useContext(Ctx);
 export const emptyDraft = () => ({
   editingId: null, // id of the spell being edited, or null for a new one
   name: "",
-  notes: "",
+  preamble: "", // short opening words, shown right under the title on the PDF
+  notes: "", // the description
   selection: {}, // { categoryId: fieldIndex }
   layout: null, // null = use the default representation from Settings
   colors: null, // null = use the default colour scheme from Settings
