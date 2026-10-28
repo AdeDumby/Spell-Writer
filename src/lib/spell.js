@@ -1,15 +1,25 @@
 /* ------------------------------------------------------------------ */
 /*  Data model                                                         */
 /*                                                                     */
-/*  category = { id, name, fields: string[], bits: number | null }     */
-/*    A field's value is its index in the list, written in binary.     */
-/*    `bits` can only widen a category; the minimum is ceil(log2(n)).  */
+/*  category = { id, name, kind, fields: string[], bits: number|null } */
+/*    kind "choice" (default): a field's value is its index in the     */
+/*      list, written in binary. `bits` can only widen a category; the */
+/*      minimum is ceil(log2(n)).                                      */
+/*    kind "text": free text (e.g. Pronunciation). It is written on the */
+/*      page but is NOT part of the binary or the glyph.               */
 /*                                                                     */
 /*  spell = { id, name, preamble, notes, layout, colors,               */
 /*            createdAt, updatedAt,                                    */
-/*            parts: [{ categoryId, category, field, bits }] }         */
+/*            parts: [{ categoryId, category, field, bits, order }],   */
+/*            texts: [{ categoryId, category, value, order }] }        */
 /*    A spell stores its own snapshot (labels + bits), so editing the  */
 /*    categories later never changes a spell that is already written.  */
+/*    `order` = the category's position when the spell was saved.      */
+/*                                                                     */
+/*  book = { id, title, subtitle, author, cover, pages, spellIds,      */
+/*           createdAt, updatedAt }                                    */
+/*    Page 1 is the cover, page 2 the summary, then one page per spell */
+/*    so a book of `pages` pages holds at most pages - 2 spells.       */
 /*                                                                     */
 /*  colors (a "scheme") = { mode, mono, custom }                       */
 /*    mode "auto"   -> built-in palette, one hue per category          */
@@ -18,9 +28,15 @@
 /* ------------------------------------------------------------------ */
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
-export const mk = (name, fields, bits = null) => ({ id: uid(), name, fields, bits });
+export const mk = (name, fields, bits = null) => ({ id: uid(), name, kind: "choice", fields, bits });
+/** A free-text category: written on the page, but not part of the binary. */
+export const mkText = (name) => ({ id: uid(), name, kind: "text", fields: [], bits: null });
+
+export const isText = (c) => c?.kind === "text";
+export const choiceCats = (categories) => categories.filter((c) => !isText(c));
 
 export const defaultCategories = () => [
+  mkText("Pronunciation"),
   mk("Level", ["Level 0", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5"]),
   mk("Type", ["Attack", "Defense", "Heal", "Summon"]),
   mk("Element", ["Fire", "Water", "Earth", "Air", "Lightning", "Ice", "Light", "Dark"]),
@@ -30,7 +46,7 @@ export const defaultCategories = () => [
 ];
 
 export const autoBits = (n) => Math.max(1, Math.ceil(Math.log2(Math.max(n, 1))));
-export const widthOf = (c) => Math.max(autoBits(c.fields.length), c.bits || 0);
+export const widthOf = (c) => (isText(c) ? 0 : Math.max(autoBits(c.fields.length), c.bits || 0));
 export const toBin = (v, w) => v.toString(2).padStart(w, "0");
 
 /* ------------------------------------------------------------------ */
@@ -103,16 +119,64 @@ export const moveItem = (arr, i, d) => {
 /*  Building and reading spells                                        */
 /* ------------------------------------------------------------------ */
 
+/** The binary parts of a spell: one per *choice* category (text categories have no bits). */
 export const makeParts = (categories, selection) =>
-  categories.map((c) => {
+  categories.flatMap((c, order) => {
+    if (isText(c)) return [];
     const idx = Math.min(selection[c.id] ?? 0, Math.max(c.fields.length - 1, 0));
-    return {
-      categoryId: c.id,
-      category: c.name,
-      field: c.fields[idx] ?? "",
-      bits: toBin(idx, widthOf(c)),
-    };
+    return [
+      {
+        categoryId: c.id,
+        category: c.name,
+        field: c.fields[idx] ?? "",
+        bits: toBin(idx, widthOf(c)),
+        order,
+      },
+    ];
   });
+
+/** The free-text values of a spell, one per *text* category: { categoryId: "..." } in. */
+export const makeTexts = (categories, values) =>
+  categories.flatMap((c, order) =>
+    isText(c)
+      ? [{ categoryId: c.id, category: c.name, value: String(values?.[c.id] ?? ""), order }]
+      : []
+  );
+
+/**
+ * Everything written about a spell, in category order, as rows for a page:
+ * { kind: "choice" | "text", categoryId, label, value }. Empty text values are left out.
+ */
+export function entriesOf(spell) {
+  const rows = [
+    ...spell.parts.map((p, i) => ({
+      kind: "choice",
+      categoryId: p.categoryId,
+      label: p.category,
+      value: p.field,
+      order: Number.isFinite(p.order) ? p.order : i + 1,
+    })),
+    ...(spell.texts ?? []).map((t, i) => ({
+      kind: "text",
+      categoryId: t.categoryId,
+      label: t.category,
+      value: t.value,
+      order: Number.isFinite(t.order) ? t.order : -1 + i / 100,
+    })),
+  ];
+  return rows.sort((a, b) => a.order - b.order).filter((r) => r.kind === "choice" || r.value.trim());
+}
+
+/** A saved spell's free texts as { categoryId: value } for the current categories (falls back to the name). */
+export function textsFromSpell(categories, spell) {
+  const out = {};
+  for (const c of categories) {
+    if (!isText(c)) continue;
+    const t = (spell.texts ?? []).find((x) => x.categoryId === c.id) ?? (spell.texts ?? []).find((x) => x.category === c.name);
+    if (t) out[c.id] = t.value;
+  }
+  return out;
+}
 
 export const binaryOf = (parts) => parts.map((p) => p.bits).join("");
 
@@ -120,18 +184,19 @@ export const binaryOf = (parts) => parts.map((p) => p.bits).join("");
 export const selectionFromParts = (categories, parts) => {
   const selection = {};
   let missing = 0;
-  for (const c of categories) {
+  for (const c of choiceCats(categories)) {
     const p = parts.find((x) => x.categoryId === c.id);
     const v = p ? parseInt(p.bits, 2) : NaN;
     if (Number.isInteger(v) && v < c.fields.length) selection[c.id] = v;
     else missing++;
   }
-  const unmatched = parts.filter((p) => !categories.some((c) => c.id === p.categoryId)).length;
+  const unmatched = parts.filter((p) => !choiceCats(categories).some((c) => c.id === p.categoryId)).length;
   return { selection, problems: missing + unmatched };
 };
 
 /** Decode a pasted binary string using the current categories. */
-export function decodeBinary(categories, text) {
+export function decodeBinary(allCategories, text) {
+  const categories = choiceCats(allCategories);
   const s = text.replace(/\s+/g, "");
   const total = categories.reduce((n, c) => n + widthOf(c), 0);
   if (!/^[01]+$/.test(s)) return { error: "Use only 0 and 1." };
@@ -148,22 +213,100 @@ export function decodeBinary(categories, text) {
   return { selection };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Books                                                              */
+/* ------------------------------------------------------------------ */
+
+export const BOOK_COVERS = {
+  oxblood: { label: "Oxblood", color: "#5a1f1f" },
+  umber: { label: "Umber", color: "#4a2e1a" },
+  forest: { label: "Forest", color: "#1f3a2b" },
+  midnight: { label: "Midnight", color: "#1c2540" },
+};
+export const MIN_PAGES = 3; // cover + summary + at least one spell
+export const MAX_PAGES = 200;
+export const DEFAULT_PAGES = 24;
+export const COVER_PAGES = 2; // the cover and the summary
+
+/** How many spells fit in a book of this many pages. */
+export const spellCapacity = (pages) => Math.max(0, pages - COVER_PAGES);
+
+export const newBook = (patch = {}) => {
+  const now = Date.now();
+  return {
+    id: uid(),
+    title: "Untitled book",
+    subtitle: "",
+    author: "",
+    cover: "oxblood",
+    pages: DEFAULT_PAGES,
+    spellIds: [],
+    createdAt: now,
+    updatedAt: now,
+    ...patch,
+  };
+};
+
+function normalizeBook(raw, knownSpellIds) {
+  if (!raw || typeof raw.id !== "string") return null;
+  const pages = Math.min(MAX_PAGES, Math.max(MIN_PAGES, Math.round(Number(raw.pages)) || DEFAULT_PAGES));
+  const seen = new Set();
+  const spellIds = (Array.isArray(raw.spellIds) ? raw.spellIds : [])
+    .filter((id) => typeof id === "string" && knownSpellIds.has(id) && !seen.has(id) && seen.add(id))
+    .slice(0, spellCapacity(pages)); // a book can never hold more spells than it has pages for
+  return {
+    id: raw.id,
+    title: String(raw.title ?? "Untitled book"),
+    subtitle: String(raw.subtitle ?? ""),
+    author: String(raw.author ?? ""),
+    cover: BOOK_COVERS[raw.cover] ? raw.cover : "oxblood",
+    pages,
+    spellIds,
+    createdAt: Number(raw.createdAt) || Date.now(),
+    updatedAt: Number(raw.updatedAt) || Date.now(),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Loading                                                            */
+/* ------------------------------------------------------------------ */
+
+// 1: original data   2: text categories (Pronunciation) and books
+export const DATA_VERSION = 2;
+
 /** Clean up anything loaded from disk or imported from a backup. */
 export function normalizeData(raw) {
   const fallbackCats = defaultCategories();
   if (!raw || typeof raw !== "object") {
-    return { categories: fallbackCats, defaultLayout: "line", defaultColors: defaultScheme(), spells: [] };
+    return {
+      version: DATA_VERSION,
+      categories: fallbackCats,
+      defaultLayout: "line",
+      defaultColors: defaultScheme(),
+      spells: [],
+      books: [],
+    };
   }
 
-  const categories =
+  let categories =
     Array.isArray(raw.categories) && raw.categories.length
-      ? raw.categories.map((c) => ({
-          id: typeof c?.id === "string" && c.id ? c.id : uid(),
-          name: String(c?.name ?? "Category"),
-          fields: Array.isArray(c?.fields) && c.fields.length ? c.fields.map(String) : ["Option A"],
-          bits: Number.isInteger(c?.bits) ? c.bits : null,
-        }))
+      ? raw.categories.map((c) => {
+          const text = c?.kind === "text";
+          return {
+            id: typeof c?.id === "string" && c.id ? c.id : uid(),
+            name: String(c?.name ?? "Category"),
+            kind: text ? "text" : "choice",
+            fields: text ? [] : Array.isArray(c?.fields) && c.fields.length ? c.fields.map(String) : ["Option A"],
+            bits: !text && Number.isInteger(c?.bits) ? c.bits : null,
+          };
+        })
       : fallbackCats;
+
+  // Data from before text categories existed gets a Pronunciation category, once, at the top.
+  // (It can be moved or deleted in Settings; the version number stops it coming back.)
+  if ((Number(raw.version) || 1) < 2 && !categories.some((c) => isText(c) || c.name === "Pronunciation")) {
+    categories = [mkText("Pronunciation"), ...categories];
+  }
 
   const spells = (Array.isArray(raw.spells) ? raw.spells : [])
     .filter(
@@ -187,14 +330,30 @@ export function normalizeData(raw) {
         category: String(p.category ?? ""),
         field: String(p.field ?? ""),
         bits: p.bits,
+        ...(Number.isFinite(p.order) ? { order: p.order } : {}),
       })),
+      texts: (Array.isArray(s.texts) ? s.texts : [])
+        .filter((t) => t && typeof t.value === "string")
+        .map((t) => ({
+          categoryId: String(t.categoryId ?? ""),
+          category: String(t.category ?? ""),
+          value: t.value,
+          ...(Number.isFinite(t.order) ? { order: t.order } : {}),
+        })),
     }));
 
+  const knownIds = new Set(spells.map((s) => s.id));
+  const books = (Array.isArray(raw.books) ? raw.books : [])
+    .map((b) => normalizeBook(b, knownIds))
+    .filter(Boolean);
+
   return {
+    version: DATA_VERSION,
     categories,
     defaultLayout: LAYOUTS[raw.defaultLayout] ? raw.defaultLayout : "line",
     defaultColors: normalizeScheme(raw.defaultColors),
     spells,
+    books,
   };
 }
 

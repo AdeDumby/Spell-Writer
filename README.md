@@ -5,6 +5,7 @@ A desktop app (Electron + Vite + React) for writing spells as binary glyphs.
 | Page | What it does |
 | --- | --- |
 | **Spellbook** | Every saved spell, with its glyph, binary and fields. Search, switch representation, export SVG, open in the Quill, delete. |
+| **Books** | Gather spells into a book with a cover and a summary, limited by its page count. Export the whole book as a PDF. |
 | **Quill** | Write a spell: pick one field per category, watch the binary and glyph update, save it. You can also paste a binary string to decode it. |
 | **Settings** | Edit categories, their fields, order and bit width. Default representation, backup export/import, reset. |
 
@@ -86,6 +87,21 @@ Notes: characters the fonts cannot draw (e.g. CJK, emoji) are left out of the PD
 shortened with "…", so a spell always fits on a single page. PNG, JPG and SVG keep the on-screen dark look. Exports use the colours and the
 "show gaps" setting you see on screen.
 
+## Text categories (Pronunciation)
+
+A category is either a **choice** (pick one field, becomes bits in the glyph) or **free text** (you type anything).
+New installs start with a free-text **Pronunciation** category; existing data gets it added once on upgrade.
+Add more in **Settings → + text category**. Text categories are written in the Quill, searchable in the Spellbook and
+printed on the PDF in category order, but are not part of the binary or the colours.
+
+## Books
+
+A book has a title, subtitle, author, cover colour and a **page count** (3 to 200). Page 1 is the cover, page 2 the
+summary, so a book of *N* pages holds *N − 2* spells, one per page. The limit is enforced everywhere: "Add" is disabled
+when the book is full and the page count can't drop below the pages already used. Spells can be reordered; deleting a
+spell removes it from every book. **Export PDF** writes the cover (leather, gold lettering), the summary (names with
+page numbers) and each spell page with its page number; unused pages are not printed.
+
 ## Adding a new representation
 
 Open `src/lib/spell.js` and add an entry to `LAYOUTS`. It receives the width of each category and returns
@@ -103,6 +119,6 @@ src/lib/platform.js    Electron API wrapper (falls back to localStorage in a bro
 src/lib/export.js      PNG / JPG / PDF / SVG rendering (PDF page design lives here)
 src/lib/paper.js       procedural parchment texture
 src/lib/pdfFonts.js    calligraphy fonts for the PDF (loaded only on PDF export)
-src/pages/             Spellbook, Quill, Settings
+src/pages/             Spellbook, Books, Quill, Settings
 src/components/        Glyph (SVG), Binary
 ```

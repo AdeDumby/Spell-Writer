@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import Glyph from "../components/Glyph.jsx";
 import Binary from "../components/Binary.jsx";
 import ExportMenu from "../components/ExportMenu.jsx";
-import { LAYOUTS, binaryOf, resolveColors, selectionFromParts } from "../lib/spell.js";
+import { LAYOUTS, binaryOf, resolveColors, selectionFromParts, textsFromSpell } from "../lib/spell.js";
 import { useStore } from "../store.jsx";
 
 function SpellCard({ spell, onEdit, onDelete, onLayout }) {
@@ -19,6 +19,13 @@ function SpellCard({ spell, onEdit, onDelete, onLayout }) {
       <Binary parts={spell.parts} colors={colors} size="sm" />
 
       <ul className="chips">
+        {(spell.texts ?? [])
+          .filter((t) => t.value.trim())
+          .map((t, i) => (
+            <li key={`t${i}`} className="text-chip">
+              <span className="muted">{t.category}</span> <i>{t.value}</i>
+            </li>
+          ))}
         {spell.parts.map((p, i) => (
           <li key={i} style={{ borderColor: colors[i] }}>
             <span className="muted">{p.category}</span> {p.field}
@@ -60,6 +67,7 @@ export default function Spellbook() {
         s.name.toLowerCase().includes(q) ||
         s.notes.toLowerCase().includes(q) ||
         (s.preamble ?? "").toLowerCase().includes(q) ||
+        (s.texts ?? []).some((t) => t.value.toLowerCase().includes(q)) ||
         binaryOf(s.parts).includes(q) ||
         s.parts.some((p) => p.field.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
     );
@@ -82,6 +90,7 @@ export default function Spellbook() {
       preamble: spell.preamble ?? "",
       notes: spell.notes,
       selection,
+      texts: textsFromSpell(data.categories, spell),
       layout: spell.layout,
       colors: spell.colors,
     });
@@ -111,7 +120,7 @@ export default function Spellbook() {
           <button
             className="primary"
             onClick={() => {
-              setDraft({ editingId: null, name: "", preamble: "", notes: "", selection: {}, layout: null, colors: null });
+              setDraft({ editingId: null, name: "", preamble: "", notes: "", selection: {}, texts: {}, layout: null, colors: null });
               setPage("quill");
             }}
           >

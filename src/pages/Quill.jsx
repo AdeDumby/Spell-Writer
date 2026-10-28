@@ -6,8 +6,11 @@ import ExportMenu from "../components/ExportMenu.jsx";
 import {
   LAYOUTS,
   binaryOf,
+  choiceCats,
   decodeBinary,
+  isText,
   makeParts,
+  makeTexts,
   resolveColors,
   toBin,
   uid,
@@ -24,6 +27,9 @@ export default function Quill() {
   const binary = binaryOf(parts);
   const scheme = draft.colors ?? data.defaultColors;
   const colors = useMemo(() => resolveColors(parts, scheme), [parts, scheme]);
+  // Colours belong to the choice categories (the ones drawn in the glyph); text categories have none.
+  const colorById = Object.fromEntries(parts.map((p, i) => [p.categoryId, colors[i]]));
+  const texts = useMemo(() => makeTexts(categories, draft.texts), [categories, draft.texts]);
   const existing = spells.find((s) => s.id === draft.editingId);
 
   const [showGaps, setShowGaps] = useState(true);
@@ -43,6 +49,7 @@ export default function Quill() {
       layout,
       colors: scheme,
       parts,
+      texts,
       createdAt: keepId ? existing.createdAt : now,
       updatedAt: now,
     });
@@ -68,7 +75,7 @@ export default function Quill() {
           </p>
         </div>
         <div className="toolbar">
-          {(existing || draft.name || Object.keys(draft.selection).length > 0) && (
+          {(existing || draft.name || Object.keys(draft.selection).length > 0 || Object.values(draft.texts).some(Boolean)) && (
             <button onClick={resetDraft}>Clear</button>
           )}
           {existing && <button onClick={() => save(true)}>Save as new copy</button>}
@@ -90,12 +97,27 @@ export default function Quill() {
           </label>
 
           <div className="selects">
-            {categories.map((c, ci) => {
+            {categories.map((c) => {
+              if (isText(c)) {
+                // A free-text category (e.g. Pronunciation): written on the page, not part of the binary.
+                return (
+                  <label key={c.id} className="stack wide">
+                    <span className="label">{c.name}</span>
+                    <input
+                      value={draft.texts[c.id] ?? ""}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, texts: { ...d.texts, [c.id]: e.target.value } }))
+                      }
+                      placeholder={`Write the ${c.name.toLowerCase()} in your own words…`}
+                    />
+                  </label>
+                );
+              }
               const idx = Math.min(draft.selection[c.id] ?? 0, c.fields.length - 1);
               const w = widthOf(c);
               return (
                 <label key={c.id} className="stack">
-                  <span className="label" style={{ color: colors[ci] }}>
+                  <span className="label" style={{ color: colorById[c.id] }}>
                     {c.name}
                   </span>
                   <select
@@ -169,6 +191,7 @@ export default function Quill() {
                 layout,
                 colors: scheme,
                 parts,
+                texts,
                 showGaps,
                 updatedAt: Date.now(),
               })}
@@ -184,7 +207,7 @@ export default function Quill() {
                 </button>
               )}
             </div>
-            <ColorControls scheme={scheme} categories={categories} onChange={(colors) => patch({ colors })} />
+            <ColorControls scheme={scheme} categories={choiceCats(categories)} onChange={(colors) => patch({ colors })} />
           </div>
 
           <Glyph parts={parts} layout={layout} colors={colors} showGaps={showGaps} />

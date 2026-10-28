@@ -1,9 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Glyph from "../components/Glyph.jsx";
-import { LAYOUTS, binaryOf, resolveColors } from "./spell.js";
+import { BOOK_COVERS, COVER_PAGES, LAYOUTS, binaryOf, entriesOf, resolveColors } from "./spell.js";
 import { exportBinary } from "./platform.js";
-import { hashSeed, makePaperCanvas } from "./paper.js";
+import { hashSeed, makeLeatherCanvas, makePaperCanvas } from "./paper.js";
 
 /* ------------------------------------------------------------------ */
 /*  Exporting a spell as PNG / JPG / PDF / SVG                         */
@@ -146,8 +146,8 @@ const bezier = (doc, x0, y0, c1x, c1y, c2x, c2y, x1, y1) =>
   doc.lines([[c1x - x0, c1y - y0, c2x - x0, c2y - y0, x1 - x0, y1 - y0]], x0, y0, [1, 1], "S");
 
 /** A small hand-drawn-looking divider: a diamond in the middle with a wave and a dot on each side. */
-function flourish(doc, cx, y, halfWidth) {
-  doc.setDrawColor(...SEPIA).setFillColor(...INK).setLineWidth(0.3);
+function flourish(doc, cx, y, halfWidth, ink = INK, line = SEPIA) {
+  doc.setDrawColor(...line).setFillColor(...ink).setLineWidth(0.3);
   doc.lines([[2, 2.4], [-2, 2.4], [-2, -2.4], [2, -2.4]], cx - 2, y, [1, 1], "F", true);
   for (const dir of [1, -1]) {
     const a = cx + dir * 4.5;
@@ -200,6 +200,14 @@ function wrapText(doc, text, widthFor) {
   return lines;
 }
 
+/** A small page number, centred inside the border at the foot of the page. */
+function drawPageNumber(doc, n, italic) {
+  const PW = doc.internal.pageSize.getWidth();
+  const PH = doc.internal.pageSize.getHeight();
+  doc.setFont(italic, "normal").setFontSize(11).setTextColor(...SEPIA);
+  doc.text(`— ${n} —`, PW / 2, PH - 13.2, { align: "center" });
+}
+
 /**
  * One portrait A4 page, written like a page from a spellbook:
  *   - parchment background, a thin border, calligraphic lettering
@@ -208,9 +216,8 @@ function wrapText(doc, text, widthFor) {
  *   - order: title, preamble, categories (label and value at one size, long values wrap), description
  * Only what a person would write is on the page: no bit strings, no representation names, no dates.
  */
-async function buildPdf(spell) {
-  const { jsPDF } = await import("jspdf");
-  const { registerFonts, SCRIPT, ITALIC } = await import("./pdfFonts.js");
+async function drawSpellPage(doc, spell, { paper, pageNo, glyphWidth = 2400 } = {}) {
+  const { SCRIPT, ITALIC } = await import("./pdfFonts.js");
   const layout = LAYOUTS[spell.layout] ?? LAYOUTS.line;
   const glyphOnTop = (layout.pdfSide ?? "right") === "top";
 
@@ -219,16 +226,13 @@ async function buildPdf(spell) {
   const inkHex = inks.map(rgbToHex);
 
   const svg = spellSvg(spell, { theme: "paper", colors: inkHex });
-  const { canvas, w: gw, h: gh } = await rasterize(svg, { targetWidth: 2400 });
+  const { canvas, w: gw, h: gh } = await rasterize(svg, { targetWidth: glyphWidth });
   const glyphPng = canvas.toDataURL("image/png");
-  const paperJpg = makePaperCanvas(1240, 1754, hashSeed(`${spell.name}|${binaryOf(spell.parts)}`)).toDataURL(
-    "image/jpeg",
-    0.82
-  );
-
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  registerFonts(doc);
-  doc.setProperties({ title: pdfSafe(spell.name), creator: "Spell Writer" });
+  // `paper` ({ data, alias }) is shared by the pages of a book, so the sheet is stored once per texture, not per page.
+  const sheet = paper ?? {
+    data: makePaperCanvas(1240, 1754, hashSeed(`${spell.name}|${binaryOf(spell.parts)}`)).toDataURL("image/jpeg", 0.82),
+    alias: undefined,
+  };
   const PW = doc.internal.pageSize.getWidth();
   const PH = doc.internal.pageSize.getHeight();
   const M = 19; // text margin
@@ -236,7 +240,7 @@ async function buildPdf(spell) {
   const cx = PW / 2;
 
   // Parchment and a double border, like a ruled page.
-  doc.addImage(paperJpg, "JPEG", 0, 0, PW, PH, undefined, "FAST");
+  doc.addImage(sheet.data, "JPEG", 0, 0, PW, PH, sheet.alias, "FAST");
   doc.setDrawColor(...SEPIA).setLineWidth(0.6).rect(7.5, 7.5, PW - 15, PH - 15);
   doc.setLineWidth(0.2).rect(9.2, 9.2, PW - 18.4, PH - 18.4);
 
@@ -254,7 +258,8 @@ async function buildPdf(spell) {
   // shrinks a little and everything is measured again. Fields are never cut: they wrap onto more lines.
   const preamble = pdfSafe(spell.preamble).trim();
   const notes = pdfSafe(spell.notes).trim();
-  const parts = spell.parts;
+  // Everything written on the page: free-text categories (Pronunciation...) and choice categories, in the order of the categories.
+  const entries = entriesOf(spell).filter((e) => e.kind !== "text" || String(e.value ?? "").trim());
   const PAGE_BOTTOM = PH - 22;
 
   // Title (does not depend on the scale): script, centred, on one line if it fits, otherwise two.
@@ -290,14 +295,14 @@ async function buildPdf(spell) {
     const vs = ds * SCRIPT_MATCH; // values (script), optically the same size as the labels
     const lead = vs * 0.3528 * 1.2;
     setItalic(ds);
-    const natural = Math.max(0, ...parts.map((p) => doc.getTextWidth(pdfSafe(p.category))));
+    const natural = Math.max(0, ...entries.map((e) => doc.getTextWidth(pdfSafe(e.label))));
     const labelW = Math.min(colW * 0.5, Math.max(colW * 0.3, natural + 5));
     const valueW = colW - labelW - 1;
-    P.rows = parts.map((p) => {
+    P.rows = entries.map((p) => {
       setItalic(ds);
-      const labelLines = wrapText(doc, pdfSafe(p.category), () => labelW - 3);
+      const labelLines = wrapText(doc, pdfSafe(p.label), () => labelW - 3);
       setScript(vs);
-      const valueLines = wrapText(doc, pdfSafe(p.field) || "—", () => valueW);
+      const valueLines = wrapText(doc, pdfSafe(p.value) || "—", () => valueW);
       const n = Math.max(labelLines.length, valueLines.length, 1);
       return { labelLines, valueLines, h: n * lead + 3.4 * s };
     });
@@ -430,6 +435,171 @@ async function buildPdf(spell) {
     P.descLines.forEach((ln, i) => doc.text(ln, M + (dropCap && i < 2 ? P.capW : 0), P.descTop + i * P.descLead));
   }
 
+  if (pageNo) drawPageNumber(doc, pageNo, ITALIC);
+}
+
+/** A single spell as its own one-page PDF. */
+async function buildPdf(spell) {
+  const { jsPDF } = await import("jspdf");
+  const { registerFonts } = await import("./pdfFonts.js");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  registerFonts(doc);
+  doc.setProperties({ title: pdfSafe(spell.name), creator: "Spell Writer" });
+  await drawSpellPage(doc, spell);
+  return new Blob([doc.output("arraybuffer")], { type: "application/pdf" });
+}
+
+/* ---------------- books ---------------- */
+
+const GOLD = [214, 178, 92];
+
+/** The front cover: leather, a double gold border, a ring-of-dots emblem, the title in gold script. */
+async function drawCover(doc, book, leatherJpg, fonts) {
+  const { SCRIPT, ITALIC } = fonts;
+  const PW = doc.internal.pageSize.getWidth();
+  const PH = doc.internal.pageSize.getHeight();
+  const cx = PW / 2 + 4; // a little right of centre: the spine takes the left edge
+  const innerW = PW - 2 * 28;
+  doc.addImage(leatherJpg, "JPEG", 0, 0, PW, PH, "leather", "FAST");
+
+  doc.setDrawColor(...GOLD).setLineWidth(0.8).rect(14, 14, PW - 28, PH - 28);
+  doc.setLineWidth(0.25).rect(16.4, 16.4, PW - 32.8, PH - 32.8);
+
+  // Emblem: a ring of dots with a few chords, like a small spell glyph.
+  const ey = 78;
+  const R = 22;
+  doc.setLineWidth(0.5);
+  doc.circle(cx, ey, R + 5);
+  doc.setLineWidth(0.25);
+  doc.circle(cx, ey, R + 7);
+  doc.setFillColor(...GOLD);
+  const N = 12;
+  const pts = Array.from({ length: N }, (_, i) => {
+    const a = -Math.PI / 2 + (i / N) * Math.PI * 2;
+    return [cx + Math.cos(a) * R, ey + Math.sin(a) * R];
+  });
+  [[0, 5], [5, 10], [10, 3], [3, 8], [8, 0]].forEach(([a, b]) => doc.setLineWidth(0.45).line(...pts[a], ...pts[b]));
+  pts.forEach(([x, y], i) => doc.circle(x, y, i === 0 ? 1.5 : 0.85, "F"));
+
+  // Title: shrinks to fit, at most three lines.
+  const title = pdfSafe(book.title) || "Untitled book";
+  let size = 46;
+  let lines = [];
+  for (const sz of [46, 40, 34, 29, 24, 20]) {
+    size = sz;
+    doc.setFont(SCRIPT, "normal").setFontSize(sz);
+    lines = doc.splitTextToSize(title, innerW);
+    if (lines.length <= 2) break;
+  }
+  if (lines.length > 3) {
+    lines = lines.slice(0, 3);
+    lines[2] = lines[2].replace(/\s*\S*$/, "") + "…";
+  }
+  const lead = size * 0.3528 * 1.15;
+  let y = 128;
+  doc.setTextColor(...GOLD);
+  lines.forEach((ln, i) => doc.text(ln, cx, y + i * lead, { align: "center" }));
+  y += (lines.length - 1) * lead + 12;
+
+  flourish(doc, cx, y, 38, GOLD, GOLD);
+
+  const sub = pdfSafe(book.subtitle);
+  if (sub) {
+    doc.setFont(ITALIC, "normal").setFontSize(17).setTextColor(...GOLD);
+    const sl = doc.splitTextToSize(sub, innerW).slice(0, 3);
+    sl.forEach((ln, i) => doc.text(ln, cx, y + 14 + i * 8, { align: "center" }));
+  }
+  const author = pdfSafe(book.author);
+  if (author) {
+    doc.setFont(ITALIC, "normal").setFontSize(15).setTextColor(...GOLD);
+    doc.text(doc.splitTextToSize(`by ${author}`, innerW)[0], cx, PH - 40, { align: "center" });
+  }
+}
+
+/** Page 2: the summary. Spell names with dotted leaders and page numbers; columns and size adapt to the count. */
+function drawSummary(doc, book, spells, paper, fonts) {
+  const { SCRIPT, ITALIC } = fonts;
+  const PW = doc.internal.pageSize.getWidth();
+  const PH = doc.internal.pageSize.getHeight();
+  const M = 19;
+  const cx = PW / 2;
+  doc.addImage(paper.data, "JPEG", 0, 0, PW, PH, paper.alias, "FAST");
+  doc.setDrawColor(...SEPIA).setLineWidth(0.6).rect(7.5, 7.5, PW - 15, PH - 15);
+  doc.setLineWidth(0.2).rect(9.2, 9.2, PW - 18.4, PH - 18.4);
+
+  doc.setFont(SCRIPT, "normal").setFontSize(40).setTextColor(...INK);
+  doc.text("Summary", cx, 32, { align: "center" });
+  flourish(doc, cx, 38, 46);
+  doc.setDrawColor(...SEPIA);
+
+  const top = 54;
+  const bottom = PH - 24;
+  if (spells.length === 0) {
+    doc.setFont(ITALIC, "normal").setFontSize(14).setTextColor(...SEPIA);
+    doc.text("No spells have been written in this book yet.", cx, top + 20, { align: "center" });
+    drawPageNumber(doc, 2, ITALIC);
+    return;
+  }
+
+  const n = spells.length;
+  let cols = 1;
+  while (cols < 6 && (bottom - top) / Math.ceil(n / cols) < 7.4) cols++;
+  const perCol = Math.ceil(n / cols);
+  const lead = Math.min(9, (bottom - top) / perCol);
+  const fontPt = Math.min(15, (lead / 0.3528) * 0.62);
+  const gutter = 8;
+  const colW = (PW - 2 * M - gutter * (cols - 1)) / cols;
+
+  spells.forEach((sp, i) => {
+    const col = Math.floor(i / perCol);
+    const x0 = M + col * (colW + gutter);
+    const y = top + (i % perCol) * lead + lead * 0.7;
+    const num = String(i + 1 + COVER_PAGES);
+    doc.setFont(ITALIC, "normal").setFontSize(fontPt).setTextColor(...INK);
+    const numW = doc.getTextWidth(num);
+    let name = pdfSafe(sp.name) || "Untitled";
+    const max = colW - numW - 6;
+    if (doc.getTextWidth(name) > max) {
+      while (name.length > 1 && doc.getTextWidth(name + "…") > max) name = name.slice(0, -1);
+      name = name.trimEnd() + "…";
+    }
+    doc.text(name, x0, y);
+    doc.text(num, x0 + colW, y, { align: "right" });
+    const nameEnd = x0 + doc.getTextWidth(name) + 1.5;
+    const numStart = x0 + colW - numW - 1.5;
+    if (numStart - nameEnd > 2) {
+      doc.setDrawColor(...SEPIA).setLineWidth(0.2).setLineDashPattern([0.3, 1.2], 0);
+      doc.line(nameEnd, y - 0.4, numStart, y - 0.4);
+      doc.setLineDashPattern([], 0);
+    }
+  });
+  drawPageNumber(doc, 2, ITALIC);
+}
+
+/** The whole book as one PDF: cover, summary, then one page per spell (only pages that are used). */
+async function buildBookPdf(book, spells) {
+  const { jsPDF } = await import("jspdf");
+  const fonts = await import("./pdfFonts.js");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  fonts.registerFonts(doc);
+  doc.setProperties({ title: pdfSafe(book.title) || "Book", author: pdfSafe(book.author), creator: "Spell Writer" });
+
+  const seed = hashSeed(`${book.id}|${book.title}`);
+  const cover = BOOK_COVERS[book.cover] ?? BOOK_COVERS.oxblood;
+  const leather = makeLeatherCanvas(1000, 1414, cover.color, seed).toDataURL("image/jpeg", 0.85);
+  // Three parchment sheets are shared by all the pages, so the file stays small however long the book is.
+  const sheets = [0, 1, 2].map((i) => ({
+    data: makePaperCanvas(1000, 1414, seed + i * 7919).toDataURL("image/jpeg", 0.8),
+    alias: `paper${i}`,
+  }));
+
+  await drawCover(doc, book, leather, fonts);
+  doc.addPage();
+  drawSummary(doc, book, spells, sheets[0], fonts);
+  for (let i = 0; i < spells.length; i++) {
+    doc.addPage();
+    await drawSpellPage(doc, spells[i], { paper: sheets[(i + 1) % 3], pageNo: i + 1 + COVER_PAGES, glyphWidth: 1600 });
+  }
   return new Blob([doc.output("arraybuffer")], { type: "application/pdf" });
 }
 
@@ -462,4 +632,10 @@ export async function exportSpell(spell, format) {
   if (!f) throw new Error(`Unknown export format: ${format}`);
   const blob = await renderSpell(spell, format);
   return exportBinary(`${fileSlug(spell.name)}.${f.ext}`, blob, f.mime);
+}
+
+/** Render a book (cover, summary, spells) as a PDF and save it. `spells` are the book's spells, in order. */
+export async function exportBook(book, spells) {
+  const blob = await buildBookPdf(book, spells);
+  return exportBinary(`${fileSlug(book.title).replace(/^spell$/, "book")}.pdf`, blob, FORMATS.pdf.mime);
 }

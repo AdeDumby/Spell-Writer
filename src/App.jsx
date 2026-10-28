@@ -1,10 +1,12 @@
 import Spellbook from "./pages/Spellbook.jsx";
+import Books from "./pages/Books.jsx";
 import Quill from "./pages/Quill.jsx";
 import Settings from "./pages/Settings.jsx";
 import { useStore } from "./store.jsx";
 
 const PAGES = [
   { key: "spellbook", label: "Spellbook", Component: Spellbook },
+  { key: "books", label: "Books", Component: Books },
   { key: "quill", label: "Quill", Component: Quill },
   { key: "settings", label: "Settings", Component: Settings },
 ];
@@ -28,6 +30,7 @@ export default function App() {
           >
             {p.label}
             {p.key === "spellbook" && <span className="badge">{data.spells.length}</span>}
+            {p.key === "books" && <span className="badge">{data.books.length}</span>}
             {p.key === "quill" && draft.editingId && <span className="badge">editing</span>}
           </button>
         ))}
